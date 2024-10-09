@@ -1,5 +1,6 @@
-20241009124159_20240909 課堂測驗_65份
+2024*
 .env
 assignment_requirements.txt
 *.csv
 __pycache__
+.log
