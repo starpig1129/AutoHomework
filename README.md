@@ -4,7 +4,7 @@
 
 ### 專案檔案
 - **prepare.py**: 
-  - 提供各種檔案格式的轉換功能，將 `.ipynb`, `.pdf`, `.docx`, 和 `.pptx` 檔案轉換為 Base64 格式的圖片。
+  - 提供各種檔案格式的轉換功能，將 `.py`, `.java`, `.cpp`, `.txt`,`.ipynb`, `.pdf`, `.docx`, 和 `.pptx` 檔案轉換為 Base64 格式的圖片。
   - 包含圖片壓縮功能，用於確保圖片大小符合最大限制。
 
 - **main.ipynb**: 
@@ -43,7 +43,10 @@
   - `python-docx`
   - `python-pptx`
   - `pdf2image`
-  - 
+  - `langchain_openai`
+  - `openai`
+  - `dotenv-python`
+  
 ### 安裝依賴
 ```bash
 pip install -r requirements.txt
