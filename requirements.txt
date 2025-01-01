@@ -1,0 +1,8 @@
+openai
+dotenv-python
+nbformat
+nbconvert
+python-docx
+python-pptx
+pdf2image
+langchain_openai
