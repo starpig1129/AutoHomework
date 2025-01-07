@@ -325,8 +325,18 @@ for student_folder in os.listdir(HOMEWORK_DIR):
         else:
             def process_file(file_path, images, texts):
                 try:
-                    # Handle zip files
-                    if zipfile.is_zipfile(file_path):
+                    # Get file extension and mime type
+                    file_ext = os.path.splitext(file_path)[1].lower()
+                    mime_type = magic.from_file(file_path, mime=True)
+                    
+                    # Skip processing if it's an Office file
+                    if file_ext in ['.docx', '.pptx', '.xlsx']:
+                        if file_ext == '.pptx':
+                            images.append(os.path.basename(file_path))
+                        return
+                        
+                    # Handle regular zip files
+                    if mime_type == 'application/zip':
                         temp_dir = os.path.join(os.path.dirname(file_path), 'temp_unzip')
                         os.makedirs(temp_dir, exist_ok=True)
                         
@@ -343,11 +353,9 @@ for student_folder in os.listdir(HOMEWORK_DIR):
                         shutil.rmtree(temp_dir)
                         return
                     
-                    # Use magic to detect file type
-                    mime_type = magic.from_file(file_path, mime=True)
-                    
                     # Get base filename without any additional extensions
                     base_name = os.path.basename(file_path)
+                    
                     
                     # Map MIME types to appropriate categories
                     if any(mime_type.startswith(t) for t in ['image/', 'application/pdf']):

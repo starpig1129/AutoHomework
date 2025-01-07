@@ -151,36 +151,74 @@ def convert_pptx_to_base64_images(pptx_path):
     try:
         prs = Presentation(pptx_path)
         base64_images = []
+        
         for slide_num, slide in enumerate(prs.slides, 1):
             try:
-                img = Image.new('RGB', (800, 600), color='white')
+                # Create a new image with white background
+                img = Image.new('RGB', (1920, 1080), color='white')
                 d = ImageDraw.Draw(img)
                 
-                # Handle text shapes
+                # Track position for content placement
                 y_position = 10
-                for shape in slide.shapes:
-                    if hasattr(shape, "text"):
-                        try:
-                            # Handle potential encoding issues
-                            text = shape.text.encode('utf-8', errors='ignore').decode('utf-8')
-                            if text.strip():  # Only process non-empty text
-                                d.text((10, y_position), f"Slide {slide_num}: {text}", fill='black')
-                                y_position += 30
-                        except Exception as e:
-                            print(f"形狀處理錯誤: {str(e)}")
-                            continue
                 
-                # Only create image if there's content
-                if y_position > 10:
-                    buffered = compress_image(img)
-                    img_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
-                    base64_images.append(img_base64)
-                    
+                for shape in slide.shapes:
+                    try:
+                        # Handle images
+                        if hasattr(shape, 'image'):
+                            try:
+                                # Extract image data
+                                image_stream = BytesIO(shape.image.blob)
+                                shape_img = Image.open(image_stream)
+                                
+                                # Calculate position to paste image
+                                x = shape.left if hasattr(shape, 'left') else 10
+                                y = shape.top if hasattr(shape, 'top') else y_position
+                                
+                                # Resize if needed while maintaining aspect ratio
+                                if shape.width and shape.height:
+                                    shape_img = shape_img.resize(
+                                        (min(int(shape.width), 1900), 
+                                         min(int(shape.height), 1000)), 
+                                        Image.LANCZOS
+                                    )
+                                
+                                # Paste image onto slide
+                                img.paste(shape_img, (int(x), int(y)))
+                                y_position = max(y_position, y + shape_img.height + 10)
+                                
+                            except Exception as e:
+                                print(f"圖片處理錯誤: {str(e)}")
+                                continue
+                        
+                        # Handle text
+                        if hasattr(shape, "text"):
+                            try:
+                                text = shape.text.encode('utf-8', errors='ignore').decode('utf-8')
+                                if text.strip():
+                                    # Get text position if available
+                                    x = shape.left if hasattr(shape, 'left') else 10
+                                    y = shape.top if hasattr(shape, 'top') else y_position
+                                    
+                                    d.text((int(x), int(y)), text, fill='black')
+                                    y_position = max(y_position, y + 30)
+                            except Exception as e:
+                                print(f"文字處理錯誤: {str(e)}")
+                                continue
+                                
+                    except Exception as e:
+                        print(f"形狀處理錯誤: {str(e)}")
+                        continue
+                
+                # Convert slide to base64
+                buffered = compress_image(img)
+                img_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
+                base64_images.append(img_base64)
+                
             except Exception as e:
                 print(f"投影片 {slide_num} 處理錯誤: {str(e)}")
                 continue
                 
-        return base64_images
+        return base64_images if base64_images else None
     except Exception as e:
         print(f"無法讀取的檔案: {pptx_path}, 錯誤類型: {type(e).__name__}, 錯誤: {str(e)}")
 

@@ -9,3 +9,4 @@ langchain-openai
 anthropic
 pillow
 logging
+python-magic
