@@ -4,6 +4,9 @@ import base64
 import openai
 import logging
 import anthropic
+import magic
+import zipfile
+import shutil
 from dotenv import load_dotenv
 from PIL import Image
 from io import BytesIO
@@ -49,60 +52,69 @@ def read_files(student):
             file_size = os.path.getsize(image_path)
             logging.info(f"處理文件: {image_path}, 大小: {file_size/1024:.2f}KB")
                 
-            if image_file.lower().endswith('.ipynb'):
-                try:
-                    pdf_path = convert_ipynb_to_pdf(image_path)
-                    if pdf_path:
-                        base64_images = convert_pdf_to_base64_images(pdf_path)
+            try:
+                mime_type = magic.from_file(image_path, mime=True)
+                
+                if mime_type == 'application/x-ipynb+json' or image_file.endswith('.ipynb'):
+                    try:
+                        pdf_path = convert_ipynb_to_pdf(image_path)
+                        if pdf_path:
+                            base64_images = convert_pdf_to_base64_images(pdf_path)
+                            if base64_images:
+                                image_base64_list.extend(base64_images)
+                            else:
+                                logging.error(f"PDF轉換失敗: {image_path}")
+                        else:
+                            logging.error(f"Notebook轉換失敗: {image_path}")
+                    except Exception as e:
+                        logging.error(f"Notebook處理錯誤 {image_path}: {str(e)}, 類型: {type(e).__name__}")
+                
+                elif mime_type == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+                    try:
+                        base64_images = convert_docx_to_base64_images(image_path)
+                        if base64_images:
+                            image_base64_list.extend(base64_images)
+                        else:
+                            logging.error(f"DOCX轉換失敗: {image_path}")
+                    except Exception as e:
+                        logging.error(f"DOCX處理錯誤 {image_path}: {str(e)}, 類型: {type(e).__name__}")
+                
+                elif mime_type == 'application/vnd.openxmlformats-officedocument.presentationml.presentation':
+                    try:
+                        base64_images = convert_pptx_to_base64_images(image_path)
+                        if base64_images:
+                            image_base64_list.extend(base64_images)
+                        else:
+                            logging.error(f"PPTX轉換失敗: {image_path}")
+                    except Exception as e:
+                        logging.error(f"PPTX處理錯誤 {image_path}: {str(e)}, 類型: {type(e).__name__}")
+                
+                elif mime_type == 'application/pdf':
+                    try:
+                        base64_images = convert_pdf_to_base64_images(image_path)
                         if base64_images:
                             image_base64_list.extend(base64_images)
                         else:
                             logging.error(f"PDF轉換失敗: {image_path}")
-                    else:
-                        logging.error(f"Notebook轉換失敗: {image_path}")
-                except Exception as e:
-                    logging.error(f"Notebook處理錯誤 {image_path}: {str(e)}, 類型: {type(e).__name__}")
+                    except Exception as e:
+                        logging.error(f"PDF處理錯誤 {image_path}: {str(e)}, 類型: {type(e).__name__}")
+                
+                elif mime_type.startswith('image/'):
+                    try:
+                        with Image.open(image_path) as img:
+                            img_base64 = image_to_base64(img)
+                            if img_base64:
+                                image_base64_list.append(img_base64)
+                            else:
+                                logging.error(f"圖片轉換失敗: {image_path}")
+                    except Exception as e:
+                        logging.error(f"圖片處理錯誤 {image_path}: {str(e)}, 類型: {type(e).__name__}")
+                
+                else:
+                    logging.warning(f"未知的檔案類型 {image_path}: {mime_type}")
                     
-            elif image_file.lower().endswith('.docx'):
-                try:
-                    base64_images = convert_docx_to_base64_images(image_path)
-                    if base64_images:
-                        image_base64_list.extend(base64_images)
-                    else:
-                        logging.error(f"DOCX轉換失敗: {image_path}")
-                except Exception as e:
-                    logging.error(f"DOCX處理錯誤 {image_path}: {str(e)}, 類型: {type(e).__name__}")
-                    
-            elif image_file.lower().endswith('.pptx'):
-                try:
-                    base64_images = convert_pptx_to_base64_images(image_path)
-                    if base64_images:
-                        image_base64_list.extend(base64_images)
-                    else:
-                        logging.error(f"PPTX轉換失敗: {image_path}")
-                except Exception as e:
-                    logging.error(f"PPTX處理錯誤 {image_path}: {str(e)}, 類型: {type(e).__name__}")
-                    
-            elif image_file.lower().endswith('.pdf'):
-                try:
-                    base64_images = convert_pdf_to_base64_images(image_path)
-                    if base64_images:
-                        image_base64_list.extend(base64_images)
-                    else:
-                        logging.error(f"PDF轉換失敗: {image_path}")
-                except Exception as e:
-                    logging.error(f"PDF處理錯誤 {image_path}: {str(e)}, 類型: {type(e).__name__}")
-                    
-            else:
-                try:
-                    with Image.open(image_path) as img:
-                        img_base64 = image_to_base64(img)
-                        if img_base64:
-                            image_base64_list.append(img_base64)
-                        else:
-                            logging.error(f"圖片轉換失敗: {image_path}")
-                except Exception as e:
-                    logging.error(f"圖片處理錯誤 {image_path}: {str(e)}, 類型: {type(e).__name__}")
+            except Exception as e:
+                logging.error(f"檔案類型檢測失敗 {image_path}: {str(e)}")
                     
         except Exception as e:
             logging.error(f"處理文件時發生未知錯誤 {image_path}: {str(e)}")
@@ -311,9 +323,55 @@ for student_folder in os.listdir(HOMEWORK_DIR):
                 'has_attachments': False
             })
         else:
+            def process_file(file_path, images, texts):
+                try:
+                    # Handle zip files
+                    if zipfile.is_zipfile(file_path):
+                        temp_dir = os.path.join(os.path.dirname(file_path), 'temp_unzip')
+                        os.makedirs(temp_dir, exist_ok=True)
+                        
+                        with zipfile.ZipFile(file_path, 'r') as zip_ref:
+                            zip_ref.extractall(temp_dir)
+                            
+                        # Process extracted files
+                        for root, _, files in os.walk(temp_dir):
+                            for f in files:
+                                extracted_file = os.path.join(root, f)
+                                process_file(extracted_file, images, texts)
+                                
+                        # Clean up
+                        shutil.rmtree(temp_dir)
+                        return
+                    
+                    # Use magic to detect file type
+                    mime_type = magic.from_file(file_path, mime=True)
+                    
+                    # Get base filename without any additional extensions
+                    base_name = os.path.basename(file_path)
+                    
+                    # Map MIME types to appropriate categories
+                    if any(mime_type.startswith(t) for t in ['image/', 'application/pdf']):
+                        images.append(base_name)
+                    elif mime_type == 'application/vnd.openxmlformats-officedocument.presentationml.presentation':
+                        images.append(base_name)
+                    elif mime_type == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+                        images.append(base_name)
+                    elif mime_type == 'application/x-ipynb+json' or base_name.endswith('.ipynb'):  # Special case for Jupyter
+                        images.append(base_name)
+                    elif any(mime_type.startswith(t) for t in ['text/', 'application/x-']):
+                        # Common programming and text file types
+                        if not base_name.lower().endswith(('.exe', '.dll', '.so', '.dylib')):  # Exclude binaries
+                            texts.append(base_name)
+                except Exception as e:
+                    logging.error(f"檔案處理失敗 {file_path}: {str(e)}")
+
             files = os.listdir(student_path)
-            images = [f for f in files if f.lower().endswith(('.png', '.jpg', '.jpeg','.pdf','.ipynb','.docx', '.pptx'))]
-            texts = [f for f in files if f.lower().endswith(('.py', '.java', '.cpp',  '.txt',))]
+            images = []
+            texts = []
+            
+            for f in files:
+                file_path = os.path.join(student_path, f)
+                process_file(file_path, images, texts)
             students.append({
                 'id': student_id,
                 'name': student_name,
