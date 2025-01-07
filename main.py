@@ -44,6 +44,10 @@ def read_files(student):
                 logging.error(f"文件不存在: {image_path}")
                 continue
                 
+            # Log file size
+            file_size = os.path.getsize(image_path)
+            logging.info(f"處理文件: {image_path}, 大小: {file_size/1024:.2f}KB")
+                
             if image_file.lower().endswith('.ipynb'):
                 try:
                     pdf_path = convert_ipynb_to_pdf(image_path)
@@ -56,7 +60,7 @@ def read_files(student):
                     else:
                         logging.error(f"Notebook轉換失敗: {image_path}")
                 except Exception as e:
-                    logging.error(f"Notebook處理錯誤 {image_path}: {str(e)}")
+                    logging.error(f"Notebook處理錯誤 {image_path}: {str(e)}, 類型: {type(e).__name__}")
                     
             elif image_file.lower().endswith('.docx'):
                 try:
@@ -66,7 +70,7 @@ def read_files(student):
                     else:
                         logging.error(f"DOCX轉換失敗: {image_path}")
                 except Exception as e:
-                    logging.error(f"DOCX處理錯誤 {image_path}: {str(e)}")
+                    logging.error(f"DOCX處理錯誤 {image_path}: {str(e)}, 類型: {type(e).__name__}")
                     
             elif image_file.lower().endswith('.pptx'):
                 try:
@@ -76,7 +80,7 @@ def read_files(student):
                     else:
                         logging.error(f"PPTX轉換失敗: {image_path}")
                 except Exception as e:
-                    logging.error(f"PPTX處理錯誤 {image_path}: {str(e)}")
+                    logging.error(f"PPTX處理錯誤 {image_path}: {str(e)}, 類型: {type(e).__name__}")
                     
             elif image_file.lower().endswith('.pdf'):
                 try:
@@ -86,7 +90,7 @@ def read_files(student):
                     else:
                         logging.error(f"PDF轉換失敗: {image_path}")
                 except Exception as e:
-                    logging.error(f"PDF處理錯誤 {image_path}: {str(e)}")
+                    logging.error(f"PDF處理錯誤 {image_path}: {str(e)}, 類型: {type(e).__name__}")
                     
             else:
                 try:
@@ -97,7 +101,7 @@ def read_files(student):
                         else:
                             logging.error(f"圖片轉換失敗: {image_path}")
                 except Exception as e:
-                    logging.error(f"圖片處理錯誤 {image_path}: {str(e)}")
+                    logging.error(f"圖片處理錯誤 {image_path}: {str(e)}, 類型: {type(e).__name__}")
                     
         except Exception as e:
             logging.error(f"處理文件時發生未知錯誤 {image_path}: {str(e)}")
@@ -106,76 +110,105 @@ def read_files(student):
     return image_base64_list, text_contents
 
 SystemPrompt = '''
-As an impartial and neutral educator, 
-your objective is to evaluate students' submitted assignments according to the specified grading criteria. 
-For each student, please assign a score out of 100, 
-based on the quality of their work and their adherence to the assignment requirements. 
-Ensure that the scores are slightly higher than usual. 
-Additionally, provide a brief comment in Traditional Chinese, 
-limited to 30 characters, explaining the reason for the assigned score.
+你是一位公正的教育者，負責根據指定的評分標準評估學生的作業。
+對於每位學生，請根據其作業質量和對作業要求的遵守程度，給出100分制的分數。
+請確保分數稍微偏高一些。同時，請用30個字以內的繁體中文提供簡短評語，說明評分理由。
 
-Ensure your output follows this structured format:
-"Student ID, score, comment."
-Refrain from including any additional text or information.
+請嚴格按照以下格式輸出，每位學生一行：
+學號,分數,評語
+
+注意事項：
+1. 不要添加任何額外的文字或信息
+2. 每行必須包含且僅包含：學號、分數、評語，用逗號分隔
+3. 分數必須是0-100的整數
+4. 評語必須是繁體中文，不超過30字
+5. 不要使用引號或其他標點符號包裹內容
+
+範例輸出格式：
+411234567,85,作業內容完整，理解深入
+411234568,92,解釋清晰，舉例恰當
 '''
 
 from langchain_openai import ChatOpenAI
 
-def grade_batch_assignments(students_batch):
+def grade_single_student(student, assignment_requirements):
+    """Grade a single student's assignment"""
     messages = [
         {"role": "system", "content": SystemPrompt},
         {"role": "user", "content": f"作業內容：\n{assignment_requirements}"}
     ]
     
-    for student in students_batch:
-        try:
-            image_base64_list, text_contents = read_files(student)
-            
-            if not image_base64_list and not text_contents:
-                logging.warning(f"{student['id']}: 無作業內容")
-                continue
-            
-            messages.append({"role": "user", "content": f"學生資訊：{student['id']} - {student['name']}"})
-            
-            for image_base64 in image_base64_list:
-                messages.append({
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/png;base64,{image_base64}",
-                            }
-                        },
-                    ],
-                })
-            
-            for content in text_contents:
-                messages.append({"role": "user", "content": content})
-            
-            messages.append({"role": "user", "content": "請評分這位學生的作業。"})
-        except Exception as e:
-            logging.error(f"處理學生 {student['id']} 的作業時發生錯誤: {str(e)}")
-    
     try:
-        logging.info(f"評分批次: {len(students_batch)}位學生")
+        image_base64_list, text_contents = read_files(student)
+        
+        if not image_base64_list and not text_contents:
+            logging.warning(f"{student['id']}: 無作業內容")
+            return None
+        
+        messages.append({"role": "user", "content": f"學生資訊：{student['id']} - {student['name']}"})
+        
+        for image_base64 in image_base64_list:
+            messages.append({
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/png;base64,{image_base64}",
+                        }
+                    },
+                ],
+            })
+        
+        for content in text_contents:
+            messages.append({"role": "user", "content": content})
+        
+        messages.append({"role": "user", "content": "請評分這位學生的作業。"})
+        
         llm = ChatOpenAI(model='gpt-4o-mini', temperature=0.0, max_tokens=300)
         response = llm.invoke(messages)
         
-        grades = []
-        for line in response.content.strip().split('\n'):
-            parts = line.strip().split(',')
-            if len(parts) == 3:
-                grades.append({
-                    'id': parts[0].strip(),
-                    'score': parts[1].strip(),
-                    'comment': parts[2].strip()
-                })
-        logging.info(f"完成評分: {len(grades)}份")
-        return grades
+        # Log the raw response for debugging
+        logging.info(f"學生 {student['id']} API Response: {response.content}")
+        
+        # Parse response
+        line = response.content.strip().strip('"\'')
+        if not line:
+            return None
+            
+        parts = [p.strip() for p in line.split(',')]
+        if len(parts) >= 3:
+            return {
+                'id': parts[0].strip(),
+                'score': parts[1].strip(),
+                'comment': parts[2].strip()
+            }
+        else:
+            logging.error(f"學生 {student['id']} 回應格式無效: {line}")
+            return None
+            
     except Exception as e:
-        logging.error(f"調用 API 時發生錯誤: {str(e)}")
-        return []
+        logging.error(f"評分學生 {student['id']} 時發生錯誤: {str(e)}")
+        return None
+
+def grade_batch_assignments(students_batch):
+    """Grade a batch of students' assignments"""
+    grades = []
+    logging.info(f"評分批次: {len(students_batch)}位學生")
+    
+    for student in students_batch:
+        if not student['has_attachments']:
+            continue
+            
+        try:
+            grade = grade_single_student(student, assignment_requirements)
+            if grade:
+                grades.append(grade)
+        except Exception as e:
+            logging.error(f"批次處理學生 {student['id']} 時發生錯誤: {str(e)}")
+    
+    logging.info(f"完成評分: {len(grades)}份")
+    return grades
     
 # 遍歷學生資料夾
 students = []
