@@ -302,13 +302,230 @@ def grade_batch_assignments(students_batch, use_anthropic=False):
     logging.info(f"完成評分: {len(grades)}份")
     return grades
     
+def process_file(file_path, images, texts, depth=0, max_depth=10):
+    """Process a single file and categorize it as either image or text"""
+    try:
+        # 先檢查是否為目錄
+        if os.path.isdir(file_path):
+            # 如果是目錄，遍歷其中的檔案（目錄遍歷不計入遞迴深度）
+            for f in os.listdir(file_path):
+                try:
+                    sub_path = os.path.join(file_path, f)
+                    process_file(sub_path, images, texts, depth, max_depth)
+                except Exception as e:
+                    logging.error(f"處理子檔案失敗 {f}: {str(e)}")
+            return
+
+        # Normalize file path and handle encoding
+        file_path = os.path.normpath(file_path)
+        file_path = os.path.abspath(file_path)
+        
+        # Try different encodings if file not found
+        if not os.path.exists(file_path):
+            encodings = ['utf-8', 'big5', 'gbk', 'latin1']
+            found = False
+            for encoding in encodings:
+                try:
+                    encoded_path = file_path.encode(encoding).decode('utf-8')
+                    if os.path.exists(encoded_path):
+                        file_path = encoded_path
+                        found = True
+                        break
+                except (UnicodeEncodeError, UnicodeDecodeError):
+                    continue
+            
+            if not found:
+                logging.error(f"文件不存在或編碼問題: {file_path}")
+                return
+            
+        # Check if file is readable
+        if not os.access(file_path, os.R_OK):
+            logging.error(f"文件無法讀取: {file_path}")
+            return
+            
+        # Get file size
+        try:
+            file_size = os.path.getsize(file_path)
+            if file_size == 0:
+                logging.error(f"文件大小為0: {file_path}")
+                return
+        except OSError as e:
+            logging.error(f"無法獲取文件大小 {file_path}: {str(e)}")
+            return
+            
+        # Get file extension and mime type
+        file_ext = os.path.splitext(file_path)[1].lower()
+        try:
+            mime_type = magic.from_file(file_path, mime=True)
+        except Exception as e:
+            logging.error(f"無法確定文件類型 {file_path}: {str(e)}")
+            return
+        
+        # Skip processing if it's an Office file
+        if file_ext in ['.docx', '.pptx', '.xlsx']:
+            if file_ext == '.pptx':
+                images.append(os.path.basename(file_path))
+            return
+            
+        # Handle regular zip files
+        if mime_type == 'application/zip' or file_ext == '.zip':
+            try:
+                extract_dir = os.path.dirname(file_path)
+                
+                with zipfile.ZipFile(file_path, 'r') as zip_ref:
+                    try:
+                        # Get list of files before extraction
+                        file_list = zip_ref.namelist()
+                        
+                        # Check for potential path traversal and file size
+                        total_size = 0
+                        max_size = 500 * 1024 * 1024  # 500MB limit
+                        valid_files = []
+                        
+                        for fname in file_list:
+                            if fname.startswith('/') or '..' in fname:
+                                logging.warning(f"跳過不安全的路徑: {fname}")
+                                continue
+                                
+                            try:
+                                info = zip_ref.getinfo(fname)
+                                total_size += info.file_size
+                                if total_size > max_size:
+                                    logging.error(f"壓縮檔太大: {file_path}")
+                                    return
+                                valid_files.append(fname)
+                            except Exception as e:
+                                logging.error(f"無法獲取檔案資訊 {fname}: {str(e)}")
+                                continue
+                        
+                        # 創建臨時解壓目錄
+                        temp_extract_dir = os.path.join(extract_dir, 'temp_extract')
+                        os.makedirs(temp_extract_dir, exist_ok=True)
+                        
+                        # Extract only valid files to temp directory
+                        for fname in valid_files:
+                            try:
+                                zip_ref.extract(fname, temp_extract_dir)
+                            except Exception as e:
+                                logging.error(f"解壓縮檔案失敗 {fname}: {str(e)}")
+                                continue
+                        
+                        # 處理解壓縮後的檔案並複製到原始目錄
+                        for fname in valid_files:
+                            try:
+                                # 處理可能的編碼問題
+                                try:
+                                    temp_file = os.path.join(temp_extract_dir, fname)
+                                    target_file = os.path.join(extract_dir, fname)
+                                except (UnicodeEncodeError, UnicodeDecodeError):
+                                    # 嘗試不同編碼
+                                    for encoding in ['utf-8', 'big5', 'gbk', 'latin1']:
+                                        try:
+                                            encoded_fname = fname.encode('latin1').decode(encoding)
+                                            temp_file = os.path.join(temp_extract_dir, encoded_fname)
+                                            target_file = os.path.join(extract_dir, encoded_fname)
+                                            break
+                                        except (UnicodeEncodeError, UnicodeDecodeError):
+                                            continue
+                                    else:
+                                        logging.error(f"無法處理檔案名稱編碼: {fname}")
+                                        continue
+                                
+                                if os.path.isfile(temp_file) and os.path.basename(temp_file) != os.path.basename(file_path):
+                                    try:
+                                        # 創建目標文件的目錄（如果需要）
+                                        target_dir = os.path.dirname(target_file)
+                                        if target_dir:
+                                            os.makedirs(target_dir, exist_ok=True)
+                                        # 複製文件到原始目錄
+                                        shutil.copy2(temp_file, target_file)
+                                    except Exception as e:
+                                        logging.error(f"複製檔案失敗 {temp_file} -> {target_file}: {str(e)}")
+                                        continue
+                                    
+                                    if depth < max_depth:
+                                        process_file(target_file, images, texts, depth + 1, max_depth)
+                                    else:
+                                        logging.warning(f"達到最大遞迴深度，跳過處理: {target_file}")
+                            except (UnicodeEncodeError, UnicodeDecodeError) as e:
+                                # 嘗試不同編碼
+                                for encoding in ['utf-8', 'big5', 'gbk', 'latin1']:
+                                    try:
+                                        encoded_path = fname.encode('latin1').decode(encoding)
+                                        extracted_file = os.path.join(temp_extract_dir, encoded_path)
+                                        if os.path.isfile(extracted_file):
+                                            if depth < max_depth:
+                                                process_file(extracted_file, images, texts, depth + 1, max_depth)
+                                            break
+                                    except (UnicodeEncodeError, UnicodeDecodeError):
+                                        continue
+                                
+                    except Exception as e:
+                        logging.error(f"處理壓縮檔時發生錯誤 {file_path}: {str(e)}")
+                            
+            except zipfile.BadZipFile:
+                logging.error(f"Bad zip file: {file_path}")
+            except Exception as e:
+                logging.error(f"Error processing zip file {file_path}: {str(e)}")
+            finally:
+                # 清理臨時目錄
+                if os.path.exists(temp_extract_dir):
+                    try:
+                        shutil.rmtree(temp_extract_dir)
+                    except Exception as e:
+                        logging.error(f"清理臨時目錄失敗 {temp_extract_dir}: {str(e)}")
+            return
+        
+        # Get base filename without any additional extensions
+        base_name = os.path.basename(file_path)
+        
+        # Map MIME types to appropriate categories
+        if any(mime_type.startswith(t) for t in ['image/', 'application/pdf']):
+            images.append(base_name)
+        elif mime_type == 'application/vnd.openxmlformats-officedocument.presentationml.presentation':
+            images.append(base_name)
+        elif mime_type == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+            images.append(base_name)
+        elif mime_type == 'application/x-ipynb+json' or base_name.endswith('.ipynb'):  # Special case for Jupyter
+            images.append(base_name)
+        elif any(mime_type.startswith(t) for t in ['text/', 'application/x-']):
+            # Common programming and text file types
+            if not base_name.lower().endswith(('.exe', '.dll', '.so', '.dylib')):  # Exclude binaries
+                texts.append(base_name)
+    except Exception as e:
+        logging.error(f"檔案處理失敗 {file_path}: {str(e)}")
+
 # 遍歷學生資料夾
 students = []
 for student_folder in os.listdir(HOMEWORK_DIR):
     student_path = os.path.join(HOMEWORK_DIR, student_folder)
     if os.path.isdir(student_path):
         try:
-            student_id, student_name = student_folder.split('_', 1)
+            # 處理資料夾名稱編碼問題
+            try:
+                folder_name = student_folder
+                if not isinstance(folder_name, str):
+                    # 如果不是字符串，嘗試解碼
+                    encodings = ['utf-8', 'big5', 'gbk', 'latin1']
+                    for encoding in encodings:
+                        try:
+                            folder_name = folder_name.decode(encoding)
+                            break
+                        except (UnicodeDecodeError, AttributeError):
+                            continue
+                    else:
+                        logging.error(f"無法解碼資料夾名稱: {student_folder}")
+                        continue
+                
+                # 分割學號和姓名
+                parts = folder_name.split('_', 1)
+                if len(parts) != 2:
+                    logging.warning(f"無效的資料夾名稱格式: {folder_name}")
+                    continue
+                student_id, student_name = parts
+            except Exception as e:
+                logging.error(f"處理資料夾名稱時發生錯誤: {student_folder}, 錯誤: {str(e)}")
+                continue
         except ValueError:
             logging.warning(f"無效的學生文件夾名稱: {student_folder}")
             continue
@@ -323,71 +540,62 @@ for student_folder in os.listdir(HOMEWORK_DIR):
                 'has_attachments': False
             })
         else:
-            def process_file(file_path, images, texts):
-                try:
-                    # Get file extension and mime type
-                    file_ext = os.path.splitext(file_path)[1].lower()
-                    mime_type = magic.from_file(file_path, mime=True)
-                    
-                    # Skip processing if it's an Office file
-                    if file_ext in ['.docx', '.pptx', '.xlsx']:
-                        if file_ext == '.pptx':
-                            images.append(os.path.basename(file_path))
-                        return
-                        
-                    # Handle regular zip files
-                    if mime_type == 'application/zip':
-                        temp_dir = os.path.join(os.path.dirname(file_path), 'temp_unzip')
-                        os.makedirs(temp_dir, exist_ok=True)
-                        
-                        with zipfile.ZipFile(file_path, 'r') as zip_ref:
-                            zip_ref.extractall(temp_dir)
-                            
-                        # Process extracted files
-                        for root, _, files in os.walk(temp_dir):
-                            for f in files:
-                                extracted_file = os.path.join(root, f)
-                                process_file(extracted_file, images, texts)
-                                
-                        # Clean up
-                        shutil.rmtree(temp_dir)
-                        return
-                    
-                    # Get base filename without any additional extensions
-                    base_name = os.path.basename(file_path)
-                    
-                    
-                    # Map MIME types to appropriate categories
-                    if any(mime_type.startswith(t) for t in ['image/', 'application/pdf']):
-                        images.append(base_name)
-                    elif mime_type == 'application/vnd.openxmlformats-officedocument.presentationml.presentation':
-                        images.append(base_name)
-                    elif mime_type == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
-                        images.append(base_name)
-                    elif mime_type == 'application/x-ipynb+json' or base_name.endswith('.ipynb'):  # Special case for Jupyter
-                        images.append(base_name)
-                    elif any(mime_type.startswith(t) for t in ['text/', 'application/x-']):
-                        # Common programming and text file types
-                        if not base_name.lower().endswith(('.exe', '.dll', '.so', '.dylib')):  # Exclude binaries
-                            texts.append(base_name)
-                except Exception as e:
-                    logging.error(f"檔案處理失敗 {file_path}: {str(e)}")
+            # Process student files
+            try:
+                if not os.path.exists(student_path):
+                    logging.error(f"學生目錄不存在: {student_path}")
+                    students.append({
+                        'id': student_id,
+                        'name': student_name,
+                        'images': [],
+                        'texts': [],
+                        'path': student_path,
+                        'has_attachments': False
+                    })
+                    continue
 
-            files = os.listdir(student_path)
-            images = []
-            texts = []
-            
-            for f in files:
-                file_path = os.path.join(student_path, f)
-                process_file(file_path, images, texts)
-            students.append({
-                'id': student_id,
-                'name': student_name,
-                'images': images,
-                'texts': texts,
-                'path': student_path,
-                'has_attachments': True
-            })
+                files = os.listdir(student_path)
+                if not files:
+                    logging.warning(f"學生目錄為空: {student_path}")
+                    students.append({
+                        'id': student_id,
+                        'name': student_name,
+                        'images': [],
+                        'texts': [],
+                        'path': student_path,
+                        'has_attachments': False
+                    })
+                    continue
+
+                images = []
+                texts = []
+                
+                for f in files:
+                    try:
+                        file_path = os.path.join(student_path, f)
+                        process_file(file_path, images, texts, depth=0, max_depth=10)
+                    except Exception as e:
+                        logging.error(f"處理文件失敗 {file_path}: {str(e)}")
+                        continue
+                
+                students.append({
+                    'id': student_id,
+                    'name': student_name,
+                    'images': images,
+                    'texts': texts,
+                    'path': student_path,
+                    'has_attachments': len(images) > 0 or len(texts) > 0
+                })
+            except Exception as e:
+                logging.error(f"處理學生目錄失敗 {student_path}: {str(e)}")
+                students.append({
+                    'id': student_id,
+                    'name': student_name,
+                    'images': [],
+                    'texts': [],
+                    'path': student_path,
+                    'has_attachments': False
+                })
 
 logging.info(f"總共找到 {len(students)} 位學生的作業")
 
