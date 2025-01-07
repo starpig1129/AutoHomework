@@ -1,8 +1,11 @@
 openai
-dotenv-python
+python-dotenv
 nbformat
 nbconvert
 python-docx
 python-pptx
 pdf2image
-langchain_openai
+langchain-openai
+anthropic
+pillow
+logging
