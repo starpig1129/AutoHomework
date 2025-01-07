@@ -1,6 +1,7 @@
 2024*
+2025*
 .env
 assignment_requirements.txt
 *.csv
 __pycache__
-.log
+*.log
