@@ -160,8 +160,10 @@ def grade_single_student(student, assignment_requirements):
                 ],
             })
         
-        for content in text_contents:
-            messages.append({"role": "user", "content": content})
+        content = f"學生資訊：{student['id']} - {student['name']}\n作業內容如下：\n"
+        for content_part in text_contents:
+            content += content_part + "\n"
+        messages.append({"role": "user", "content": content})
         
         messages.append({"role": "user", "content": "請評分這位學生的作業。"})
         
