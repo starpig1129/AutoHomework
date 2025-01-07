@@ -402,42 +402,40 @@ def process_file(file_path, images, texts, depth=0, max_depth=10):
                         temp_extract_dir = os.path.join(extract_dir, 'temp_extract')
                         os.makedirs(temp_extract_dir, exist_ok=True)
                         
-                        # Extract only valid files to temp directory
+                        # 直接解壓檔案到目標目錄，忽略路徑結構
                         for fname in valid_files:
                             try:
-                                zip_ref.extract(fname, temp_extract_dir)
-                            except Exception as e:
-                                logging.error(f"解壓縮檔案失敗 {fname}: {str(e)}")
-                                continue
-                        
-                        # 處理解壓縮後的檔案並複製到原始目錄
-                        for fname in valid_files:
-                            try:
-                                # 處理可能的編碼問題
+                                # 只取檔案名，忽略路徑
+                                base_fname = os.path.basename(fname)
+                                if not base_fname:  # 跳過純目錄項目
+                                    continue
+                                    
+                                # 處理檔案名稱編碼
                                 try:
-                                    temp_file = os.path.join(temp_extract_dir, fname)
-                                    target_file = os.path.join(extract_dir, fname)
+                                    target_fname = base_fname
                                 except (UnicodeEncodeError, UnicodeDecodeError):
                                     # 嘗試不同編碼
                                     for encoding in ['utf-8', 'big5', 'gbk', 'latin1']:
                                         try:
-                                            encoded_fname = fname.encode('latin1').decode(encoding)
-                                            temp_file = os.path.join(temp_extract_dir, encoded_fname)
-                                            target_file = os.path.join(extract_dir, encoded_fname)
+                                            target_fname = base_fname.encode('latin1').decode(encoding)
                                             break
                                         except (UnicodeEncodeError, UnicodeDecodeError):
                                             continue
                                     else:
-                                        logging.error(f"無法處理檔案名稱編碼: {fname}")
+                                        logging.error(f"無法處理檔案名稱編碼: {base_fname}")
                                         continue
                                 
-                                if os.path.isfile(temp_file) and os.path.basename(temp_file) != os.path.basename(file_path):
+                                # 解壓到臨時目錄
+                                temp_file = os.path.join(temp_extract_dir, target_fname)
+                                target_file = os.path.join(extract_dir, target_fname)
+                                
+                                # 從zip檔案中讀取內容並寫入臨時檔案
+                                with zip_ref.open(fname) as source, open(temp_file, 'wb') as target:
+                                    shutil.copyfileobj(source, target)
+                                
+                                # 檢查並複製檔案到目標目錄
+                                if os.path.isfile(temp_file) and target_fname != os.path.basename(file_path):
                                     try:
-                                        # 創建目標文件的目錄（如果需要）
-                                        target_dir = os.path.dirname(target_file)
-                                        if target_dir:
-                                            os.makedirs(target_dir, exist_ok=True)
-                                        # 複製文件到原始目錄
                                         shutil.copy2(temp_file, target_file)
                                     except Exception as e:
                                         logging.error(f"複製檔案失敗 {temp_file} -> {target_file}: {str(e)}")
@@ -494,134 +492,134 @@ def process_file(file_path, images, texts, depth=0, max_depth=10):
                 texts.append(base_name)
     except Exception as e:
         logging.error(f"檔案處理失敗 {file_path}: {str(e)}")
-
-# 遍歷學生資料夾
-students = []
-for student_folder in os.listdir(HOMEWORK_DIR):
-    student_path = os.path.join(HOMEWORK_DIR, student_folder)
-    if os.path.isdir(student_path):
-        try:
-            # 處理資料夾名稱編碼問題
+if __name__ == "__name__":
+    # 遍歷學生資料夾
+    students = []
+    for student_folder in os.listdir(HOMEWORK_DIR):
+        student_path = os.path.join(HOMEWORK_DIR, student_folder)
+        if os.path.isdir(student_path):
             try:
-                folder_name = student_folder
-                if not isinstance(folder_name, str):
-                    # 如果不是字符串，嘗試解碼
-                    encodings = ['utf-8', 'big5', 'gbk', 'latin1']
-                    for encoding in encodings:
-                        try:
-                            folder_name = folder_name.decode(encoding)
-                            break
-                        except (UnicodeDecodeError, AttributeError):
+                # 處理資料夾名稱編碼問題
+                try:
+                    folder_name = student_folder
+                    if not isinstance(folder_name, str):
+                        # 如果不是字符串，嘗試解碼
+                        encodings = ['utf-8', 'big5', 'gbk', 'latin1']
+                        for encoding in encodings:
+                            try:
+                                folder_name = folder_name.decode(encoding)
+                                break
+                            except (UnicodeDecodeError, AttributeError):
+                                continue
+                        else:
+                            logging.error(f"無法解碼資料夾名稱: {student_folder}")
                             continue
-                    else:
-                        logging.error(f"無法解碼資料夾名稱: {student_folder}")
+                    
+                    # 分割學號和姓名
+                    parts = folder_name.split('_', 1)
+                    if len(parts) != 2:
+                        logging.warning(f"無效的資料夾名稱格式: {folder_name}")
                         continue
-                
-                # 分割學號和姓名
-                parts = folder_name.split('_', 1)
-                if len(parts) != 2:
-                    logging.warning(f"無效的資料夾名稱格式: {folder_name}")
+                    student_id, student_name = parts
+                except Exception as e:
+                    logging.error(f"處理資料夾名稱時發生錯誤: {student_folder}, 錯誤: {str(e)}")
                     continue
-                student_id, student_name = parts
-            except Exception as e:
-                logging.error(f"處理資料夾名稱時發生錯誤: {student_folder}, 錯誤: {str(e)}")
+            except ValueError:
+                logging.warning(f"無效的學生文件夾名稱: {student_folder}")
                 continue
-        except ValueError:
-            logging.warning(f"無效的學生文件夾名稱: {student_folder}")
-            continue
-        
-        if student_folder.endswith('無附件'):
-            students.append({
-                'id': student_id,
-                'name': student_name.replace('無附件',''),
-                'images': [],
-                'texts': [],
-                'path': student_path,
-                'has_attachments': False
-            })
-        else:
-            # Process student files
-            try:
-                if not os.path.exists(student_path):
-                    logging.error(f"學生目錄不存在: {student_path}")
-                    students.append({
-                        'id': student_id,
-                        'name': student_name,
-                        'images': [],
-                        'texts': [],
-                        'path': student_path,
-                        'has_attachments': False
-                    })
-                    continue
-
-                files = os.listdir(student_path)
-                if not files:
-                    logging.warning(f"學生目錄為空: {student_path}")
-                    students.append({
-                        'id': student_id,
-                        'name': student_name,
-                        'images': [],
-                        'texts': [],
-                        'path': student_path,
-                        'has_attachments': False
-                    })
-                    continue
-
-                images = []
-                texts = []
-                
-                for f in files:
-                    try:
-                        file_path = os.path.join(student_path, f)
-                        process_file(file_path, images, texts, depth=0, max_depth=10)
-                    except Exception as e:
-                        logging.error(f"處理文件失敗 {file_path}: {str(e)}")
-                        continue
-                
+            
+            if student_folder.endswith('無附件'):
                 students.append({
                     'id': student_id,
-                    'name': student_name,
-                    'images': images,
-                    'texts': texts,
-                    'path': student_path,
-                    'has_attachments': len(images) > 0 or len(texts) > 0
-                })
-            except Exception as e:
-                logging.error(f"處理學生目錄失敗 {student_path}: {str(e)}")
-                students.append({
-                    'id': student_id,
-                    'name': student_name,
+                    'name': student_name.replace('無附件',''),
                     'images': [],
                     'texts': [],
                     'path': student_path,
                     'has_attachments': False
                 })
-
-logging.info(f"總共找到 {len(students)} 位學生的作業")
-
-# 開始評分
-output_file_name = HOMEWORK_DIR.split('/')[-1].split('_')[1]
-with open(f'{output_file_name}.csv', 'w', newline='', encoding='utf-8') as csvfile:
-    fieldnames = ['學號', '姓名', '分數', '評語']
-    writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-    writer.writeheader()
-    
-    for i in range(0, len(students), 10):
-        batch = students[i:i+10]
-        grades = grade_batch_assignments([s for s in batch if s['has_attachments']], use_anthropic=use_anthropic)
-        
-        for student in batch:
-            if not student['has_attachments']:
-                writer.writerow({'學號': student['id'], '姓名': student['name'], '分數': 0, '評語': '未繳交'})
-                print({'學號': student['id'], '姓名': student['name'], '分數': 0, '評語': '未繳交'})
             else:
-                grade = next((g for g in grades if g['id'] == student['id']), None)
-                if grade:
-                    writer.writerow({'學號': student['id'], '姓名': student['name'], '分數': grade['score'], '評語': grade['comment']})
-                    print({'學號': student['id'], '姓名': student['name'], '分數': grade['score'], '評語': grade['comment']})
-                else:
-                    writer.writerow({'學號': student['id'], '姓名': student['name'], '分數': 0, '評語': '讀取異常'})
-                    print({'學號': student['id'], '姓名': student['name'], '分數': 0, '評語': '讀取異常'})
-                    logging.warning(f"{student['id']}: 讀取異常")
+                # Process student files
+                try:
+                    if not os.path.exists(student_path):
+                        logging.error(f"學生目錄不存在: {student_path}")
+                        students.append({
+                            'id': student_id,
+                            'name': student_name,
+                            'images': [],
+                            'texts': [],
+                            'path': student_path,
+                            'has_attachments': False
+                        })
+                        continue
 
-print("評分完成。請檢查 grading.log 文件以獲取詳細的錯誤信息。")
+                    files = os.listdir(student_path)
+                    if not files:
+                        logging.warning(f"學生目錄為空: {student_path}")
+                        students.append({
+                            'id': student_id,
+                            'name': student_name,
+                            'images': [],
+                            'texts': [],
+                            'path': student_path,
+                            'has_attachments': False
+                        })
+                        continue
+
+                    images = []
+                    texts = []
+                    
+                    for f in files:
+                        try:
+                            file_path = os.path.join(student_path, f)
+                            process_file(file_path, images, texts, depth=0, max_depth=10)
+                        except Exception as e:
+                            logging.error(f"處理文件失敗 {file_path}: {str(e)}")
+                            continue
+                    
+                    students.append({
+                        'id': student_id,
+                        'name': student_name,
+                        'images': images,
+                        'texts': texts,
+                        'path': student_path,
+                        'has_attachments': len(images) > 0 or len(texts) > 0
+                    })
+                except Exception as e:
+                    logging.error(f"處理學生目錄失敗 {student_path}: {str(e)}")
+                    students.append({
+                        'id': student_id,
+                        'name': student_name,
+                        'images': [],
+                        'texts': [],
+                        'path': student_path,
+                        'has_attachments': False
+                    })
+
+    logging.info(f"總共找到 {len(students)} 位學生的作業")
+
+    # 開始評分
+    output_file_name = HOMEWORK_DIR.split('/')[-1].split('_')[1]
+    with open(f'{output_file_name}.csv', 'w', newline='', encoding='utf-8') as csvfile:
+        fieldnames = ['學號', '姓名', '分數', '評語']
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+        
+        for i in range(0, len(students), 10):
+            batch = students[i:i+10]
+            grades = grade_batch_assignments([s for s in batch if s['has_attachments']], use_anthropic=use_anthropic)
+            
+            for student in batch:
+                if not student['has_attachments']:
+                    writer.writerow({'學號': student['id'], '姓名': student['name'], '分數': 0, '評語': '未繳交'})
+                    print({'學號': student['id'], '姓名': student['name'], '分數': 0, '評語': '未繳交'})
+                else:
+                    grade = next((g for g in grades if g['id'] == student['id']), None)
+                    if grade:
+                        writer.writerow({'學號': student['id'], '姓名': student['name'], '分數': grade['score'], '評語': grade['comment']})
+                        print({'學號': student['id'], '姓名': student['name'], '分數': grade['score'], '評語': grade['comment']})
+                    else:
+                        writer.writerow({'學號': student['id'], '姓名': student['name'], '分數': 0, '評語': '讀取異常'})
+                        print({'學號': student['id'], '姓名': student['name'], '分數': 0, '評語': '讀取異常'})
+                        logging.warning(f"{student['id']}: 讀取異常")
+
+    print("評分完成。請檢查 grading.log 文件以獲取詳細的錯誤信息。")
