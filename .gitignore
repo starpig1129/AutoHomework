@@ -4,3 +4,4 @@
 assignment_requirements.txt
 *.csv
 __pycache__
+*.log
