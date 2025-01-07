@@ -6,7 +6,7 @@ import logging
 from dotenv import load_dotenv
 from PIL import Image
 from io import BytesIO
-from prepare import convert_ipynb_to_pdf,convert_pdf_to_base64_images,convert_docx_to_base64_images,convert_pptx_to_base64_images
+from prepare import convert_ipynb_to_pdf,convert_pdf_to_base64_images,convert_docx_to_base64_images,convert_pptx_to_base64_images,image_to_base64
 # 設置日誌
 logging.basicConfig(filename='grading.log', level=logging.INFO, 
                     format='%(asctime)s - %(levelname)s - %(message)s')
@@ -40,27 +40,67 @@ def read_files(student):
     for image_file in student['images']:
         image_path = os.path.join(student['path'], image_file)
         try:
+            if not os.path.exists(image_path):
+                logging.error(f"文件不存在: {image_path}")
+                continue
+                
             if image_file.lower().endswith('.ipynb'):
-                pdf_path = convert_ipynb_to_pdf(image_path)
-                base64_images = convert_pdf_to_base64_images(pdf_path)
-                image_base64_list.extend(base64_images)
+                try:
+                    pdf_path = convert_ipynb_to_pdf(image_path)
+                    if pdf_path:
+                        base64_images = convert_pdf_to_base64_images(pdf_path)
+                        if base64_images:
+                            image_base64_list.extend(base64_images)
+                        else:
+                            logging.error(f"PDF轉換失敗: {image_path}")
+                    else:
+                        logging.error(f"Notebook轉換失敗: {image_path}")
+                except Exception as e:
+                    logging.error(f"Notebook處理錯誤 {image_path}: {str(e)}")
+                    
             elif image_file.lower().endswith('.docx'):
-                base64_images = convert_docx_to_base64_images(image_path)
-                image_base64_list.extend(base64_images)
+                try:
+                    base64_images = convert_docx_to_base64_images(image_path)
+                    if base64_images:
+                        image_base64_list.extend(base64_images)
+                    else:
+                        logging.error(f"DOCX轉換失敗: {image_path}")
+                except Exception as e:
+                    logging.error(f"DOCX處理錯誤 {image_path}: {str(e)}")
+                    
             elif image_file.lower().endswith('.pptx'):
-                base64_images = convert_pptx_to_base64_images(image_path)
-                image_base64_list.extend(base64_images)
+                try:
+                    base64_images = convert_pptx_to_base64_images(image_path)
+                    if base64_images:
+                        image_base64_list.extend(base64_images)
+                    else:
+                        logging.error(f"PPTX轉換失敗: {image_path}")
+                except Exception as e:
+                    logging.error(f"PPTX處理錯誤 {image_path}: {str(e)}")
+                    
             elif image_file.lower().endswith('.pdf'):
-                base64_images = convert_pdf_to_base64_images(image_path)
-                image_base64_list.extend(base64_images)
+                try:
+                    base64_images = convert_pdf_to_base64_images(image_path)
+                    if base64_images:
+                        image_base64_list.extend(base64_images)
+                    else:
+                        logging.error(f"PDF轉換失敗: {image_path}")
+                except Exception as e:
+                    logging.error(f"PDF處理錯誤 {image_path}: {str(e)}")
+                    
             else:
-                with Image.open(image_path) as img:
-                    buffered = BytesIO()
-                    img.save(buffered, format="PNG")
-                    img_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
-                    image_base64_list.append(img_base64)
+                try:
+                    with Image.open(image_path) as img:
+                        img_base64 = image_to_base64(img)
+                        if img_base64:
+                            image_base64_list.append(img_base64)
+                        else:
+                            logging.error(f"圖片轉換失敗: {image_path}")
+                except Exception as e:
+                    logging.error(f"圖片處理錯誤 {image_path}: {str(e)}")
+                    
         except Exception as e:
-            logging.error(f"無法處理文件 {image_path}: {str(e)}")
+            logging.error(f"處理文件時發生未知錯誤 {image_path}: {str(e)}")
     
     logging.info(f"完成處理 {student['id']}: {len(text_contents)}文本, {len(image_base64_list)}圖片")
     return image_base64_list, text_contents
