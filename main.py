@@ -3,6 +3,7 @@ import csv
 import base64
 import openai
 import logging
+import anthropic
 from dotenv import load_dotenv
 from PIL import Image
 from io import BytesIO
@@ -15,9 +16,9 @@ HOMEWORK_DIR = os.path.abspath(os.getenv('HOMEWORK_DIR'))
 # 確認路徑是否存在
 if not os.path.exists(HOMEWORK_DIR):
     raise FileNotFoundError(f"The directory {HOMEWORK_DIR} does not exist. Current path: {HOMEWORK_DIR}")
-#os.environ["ANTHROPIC_API_KEY"] = os.getenv('ANTHROPIC_API_KEY')
+os.environ["ANTHROPIC_API_KEY"] = os.getenv('ANTHROPIC_API_KEY')
 os.environ["OPENAI_API_KEY"] = os.getenv('OPENAI_API_KEY')
-
+use_anthropic = False
 with open('assignment_requirements.txt', 'r', encoding='utf-8') as f:
     assignment_requirements = f.read()
 
@@ -131,6 +132,80 @@ SystemPrompt = '''
 
 from langchain_openai import ChatOpenAI
 
+def grade_single_student_anthropic(student, assignment_requirements):
+    """Grade a single student's assignment using Anthropic's Claude"""
+    try:
+        image_base64_list, text_contents = read_files(student)
+        
+        if not image_base64_list and not text_contents:
+            logging.warning(f"{student['id']}: 無作業內容")
+            return None
+            
+        client = anthropic.Anthropic()
+        
+        # Prepare message content
+        message_content = []
+        
+        # Add images first
+        for image_base64 in image_base64_list:
+            message_content.append({
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": "image/jpeg",
+                    "data": image_base64
+                }
+            })
+        
+        # Add text content
+        text_content = f"{SystemPrompt}\n\n作業要求：\n{assignment_requirements}\n\n"
+        text_content += f"學生資訊：{student['id']} - {student['name']}\n\n"
+        
+        if text_contents:
+            text_content += "作業內容：\n"
+            for text in text_contents:
+                text_content += text + "\n"
+        
+        text_content += "\n請評分這位學生的作業。"
+        
+        message_content.append({
+            "type": "text",
+            "text": text_content
+        })
+        
+        # Make API call
+        message = client.messages.create(
+            model="claude-3-5-sonnet-latest",
+            max_tokens=1024,
+            messages=[{
+                "role": "user",
+                "content": message_content
+            }]
+        )
+        
+        # Log the raw response for debugging
+        logging.info(f"學生 {student['id']} Anthropic API Response: {message.content}")
+        
+        # Parse response
+        line = message.content[0].text.strip().strip('"\'')
+        if not line:
+            return None
+            
+        parts = [p.strip() for p in line.split(',')]
+        if len(parts) >= 3:
+            return {
+                'id': parts[0].strip(),
+                'score': parts[1].strip(),
+                'comment': parts[2].strip()
+            }
+        else:
+            logging.error(f"學生 {student['id']} 回應格式無效: {line}")
+            return None
+            
+    except Exception as e:
+        logging.error(f"評分學生 {student['id']} 時發生錯誤: {str(e)}")
+        return None
+
 def grade_single_student(student, assignment_requirements):
     """Grade a single student's assignment"""
     messages = [
@@ -193,7 +268,7 @@ def grade_single_student(student, assignment_requirements):
         logging.error(f"評分學生 {student['id']} 時發生錯誤: {str(e)}")
         return None
 
-def grade_batch_assignments(students_batch):
+def grade_batch_assignments(students_batch, use_anthropic=False):
     """Grade a batch of students' assignments"""
     grades = []
     logging.info(f"評分批次: {len(students_batch)}位學生")
@@ -203,7 +278,10 @@ def grade_batch_assignments(students_batch):
             continue
             
         try:
-            grade = grade_single_student(student, assignment_requirements)
+            if use_anthropic:
+                grade = grade_single_student_anthropic(student, assignment_requirements)
+            else:
+                grade = grade_single_student(student, assignment_requirements)
             if grade:
                 grades.append(grade)
         except Exception as e:
@@ -256,7 +334,7 @@ with open(f'{output_file_name}.csv', 'w', newline='', encoding='utf-8') as csvfi
     
     for i in range(0, len(students), 10):
         batch = students[i:i+10]
-        grades = grade_batch_assignments([s for s in batch if s['has_attachments']])
+        grades = grade_batch_assignments([s for s in batch if s['has_attachments']], use_anthropic=use_anthropic)
         
         for student in batch:
             if not student['has_attachments']:

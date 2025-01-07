@@ -37,7 +37,6 @@ def compress_image(image, max_size_mb=2):
         buffered = io.BytesIO()
         image.save(buffered, format="JPEG", quality=quality)
         
-    print(f"Compressed image size: {len(buffered.getvalue()) / 1024:.2f}KB")
     return buffered
 # 定義函數：將 ipynb 轉換為 PDF
 def convert_ipynb_to_pdf(ipynb_path):
