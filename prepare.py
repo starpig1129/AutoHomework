@@ -8,21 +8,35 @@ from docx import Document
 from pptx import Presentation
 from io import BytesIO
 from pdf2image import convert_from_path
-def compress_image(image, max_size_mb=20):
-    """Compress image to a maximum size."""
+def compress_image(image, max_size_mb=2):
+    """Compress image to a maximum size of 2MB for API compatibility."""
     buffered = io.BytesIO()
-    image.save(buffered, format="PNG")
+    # Convert to RGB if image is in RGBA mode
+    if image.mode == 'RGBA':
+        image = image.convert('RGB')
+    
+    # Initial save with high quality
+    image.save(buffered, format="JPEG", quality=95)
     size_kb = len(buffered.getvalue()) / 1024
     
     if size_kb > max_size_mb * 1024:
-        scale_factor = (max_size_mb * 1024) / size_kb
-        new_width = int(image.width * scale_factor)
-        new_height = int(image.height * scale_factor)
-        image = image.resize((new_width, new_height), Image.LANCZOS)
+        # Calculate compression ratio
+        compression_ratio = (max_size_mb * 1024) / size_kb
+        quality = int(95 * compression_ratio)
         
+        # Resize if quality would be too low
+        if quality < 30:
+            scale_factor = (max_size_mb * 1024 * 30) / (size_kb * 95)
+            new_width = int(image.width * scale_factor)
+            new_height = int(image.height * scale_factor)
+            image = image.resize((new_width, new_height), Image.LANCZOS)
+            quality = 30
+        
+        # Save with new quality/size
         buffered = io.BytesIO()
-        image.save(buffered, format="PNG")
+        image.save(buffered, format="JPEG", quality=quality)
         
+    print(f"Compressed image size: {len(buffered.getvalue()) / 1024:.2f}KB")
     return buffered
 # 定義函數：將 ipynb 轉換為 PDF
 def convert_ipynb_to_pdf(ipynb_path):
@@ -63,8 +77,7 @@ def convert_docx_to_base64_images(docx_path):
             img = Image.new('RGB', (800, 100), color='white')
             d = ImageDraw.Draw(img)
             d.text((10, 10), paragraph.text, fill='black')
-            buffered = BytesIO()
-            img.save(buffered, format="PNG")
+            buffered = compress_image(img)
             img_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
             base64_images.append(img_base64)
         return base64_images
@@ -82,8 +95,7 @@ def convert_pptx_to_base64_images(pptx_path):
             d = ImageDraw.Draw(img)
             slide_text = '\n'.join([shape.text for shape in slide.shapes if hasattr(shape, "text")])
             d.text((10, 10), slide_text, fill='black')
-            buffered = BytesIO()
-            img.save(buffered, format="PNG")
+            buffered = compress_image(img)
             img_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
             base64_images.append(img_base64)
         return base64_images
@@ -93,6 +105,5 @@ def convert_pptx_to_base64_images(pptx_path):
 
 # 將圖片轉換為 Base64 字符串
 def image_to_base64(image):
-    buffered = BytesIO()
-    image.save(buffered, format="PNG")
+    buffered = compress_image(image)
     return base64.b64encode(buffered.getvalue()).decode('utf-8')
