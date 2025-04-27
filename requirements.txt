@@ -1,12 +1,23 @@
+# Core dependencies
 openai
+anthropic
 python-dotenv
-nbformat
-nbconvert
+PyYAML
+tenacity
+aiofiles
+python-magic # Requires libmagic system library
+
+# File Conversion dependencies
+Pillow # PIL fork
 python-docx
 python-pptx
-pdf2image
-langchain-openai
-anthropic
-pillow
-logging
-python-magic
+pdf2image # Requires poppler system library/executable
+nbformat
+nbconvert # May require additional dependencies like pyppeteer for certain exporters
+
+# Note:
+# - python-magic requires the 'libmagic' library to be installed on your system.
+#   (e.g., `sudo apt-get install libmagic1` on Debian/Ubuntu, `brew install libmagic` on macOS)
+# - pdf2image requires 'poppler' to be installed and in your system's PATH or specified via POPPLER_PATH env var.
+#   (e.g., `sudo apt-get install poppler-utils` on Debian/Ubuntu, `brew install poppler` on macOS)
+# - nbconvert might require additional packages like 'pyppeteer' or 'pandoc' depending on the chosen exporter template for ipynb->pdf conversion.

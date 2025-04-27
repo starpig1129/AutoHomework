@@ -187,7 +187,7 @@ def grade_single_student_anthropic(student, assignment_requirements):
         
         # Make API call
         message = client.messages.create(
-            model="claude-3-5-sonnet-latest",
+            model="claude-3-7-sonnet-latest",
             max_tokens=1024,
             messages=[{
                 "role": "user",
