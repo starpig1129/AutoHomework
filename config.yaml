@@ -1,0 +1,36 @@
+# Configuration for the Grading Agent
+
+# LLM Settings
+llm:
+  provider: "anthropic"  # Supported: "openai", "anthropic", "gemini" (gemini is placeholder)
+  model: "claude-3-7-sonnet-latest" # Specific model name (e.g., "gpt-4o-mini", "claude-3-5-sonnet-latest")
+  parameters: # Optional parameters passed to the LLM client constructor
+    max_tokens: 300
+    temperature: 1.0
+    # Add other provider-specific parameters here if needed
+
+# File Processing Settings
+processing:
+  max_depth: 5 # Maximum recursion depth for directories/archives
+  max_zip_size_mb: 100 # Maximum total uncompressed size for zip files
+
+# Paths Configuration
+paths:
+  # Directory containing student submission folders (e.g., "StudentID-StudentName")
+  homework_dir: "./homework" # Use relative path from project root
+  # Output CSV file for grades
+  output_csv: "./Output/grades.csv" # Use relative path
+  # System prompt file
+  system_prompt_file: "system_prompt.txt"
+  # Assignment requirements file
+  requirements_file: "assignment_requirements.txt"
+
+# Agent Settings
+agent:
+  max_concurrent_students: 5 # Number of students to process concurrently
+
+# Logging Configuration (Basic - can be expanded)
+logging:
+  level: "INFO" # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  log_file: "grading_agent.log" # Optional: file to log to
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
