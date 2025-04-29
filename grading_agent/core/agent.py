@@ -81,19 +81,44 @@ class GradingAgent:
              return "" # Return empty on error
 
     def _create_llm_client(self) -> LLMInterface:
-        """Creates the LLM client instance using the factory."""
-        provider = self.llm_config.get('provider')
-        model_name = self.llm_config.get('model')
-        api_key = self.config_manager.get_api_key(provider)
+        """Creates the LLM client instance using the factory.
+
+        Reads the provider configuration, retrieves the API key from the
+        environment variable specified in the config, and instantiates the client.
+
+        Returns:
+            An instance of LLMInterface for the configured provider.
+
+        Raises:
+            ValueError: If required configuration (provider, model, api_key_env)
+                        is missing or the API key environment variable is not set.
+            NotImplementedError: If the specified provider is not supported by the factory.
+        """
+        # Retrieve LLM configuration using dedicated methods
+        provider = self.config_manager.get_llm_provider()
+        model_name = self.config_manager.get_llm_model()
+        provider_config = self.config_manager.get_llm_config() # Still needed for api_key_env and parameters
+        api_key_env_var = provider_config.get('api_key_env') # Get the env var name from the specific provider config
+
+        # Log the retrieved provider and model for debugging
+        logger.debug("Provider from ConfigManager: %s", provider)
+        logger.debug("Model from ConfigManager: %s", model_name)
 
         if not provider or not model_name:
-            raise ValueError("LLM provider or model name missing in configuration.")
+            logger.error("LLM 'provider' or 'model' name missing or empty in configuration.") # Log before raising
+            raise ValueError("LLM 'provider' or 'model' name missing in configuration.")
+        if not api_key_env_var:
+            # Log before raising
+            logger.error("LLM configuration for provider '%s' is missing the 'api_key_env' setting.", provider)
+            raise ValueError(f"LLM configuration for provider '{provider}' is missing the 'api_key_env' setting.")
+
+        # Get API key from environment using the name specified in config
+        api_key = os.environ.get(api_key_env_var)
         if not api_key:
-            # The factory will also raise an error, but checking early is good.
-            raise ValueError(f"API key for provider '{provider}' not found in environment variables.")
+            raise ValueError(f"API key environment variable '{api_key_env_var}' not set for provider '{provider}'.")
 
         # Pass other potential LLM args from config (e.g., max_tokens, temperature)
-        llm_args = self.llm_config.get('parameters', {})
+        llm_args = provider_config.get('parameters', {})
 
         try:
             client = LLMFactory.create_llm_client(

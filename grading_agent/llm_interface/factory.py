@@ -57,11 +57,6 @@ class LLMFactory:
         instance = client_class(
             api_key=api_key, model_name=model_name, **kwargs
         )
-        # Special handling for unimplemented clients like Gemini
-        if provider_key == "gemini":
-             logger.warning("Instantiated GeminiClient placeholder. Full functionality pending implementation.")
-             # Consider if you want to prevent usage entirely until implemented:
-             # raise NotImplementedError(f"LLM provider '{provider}' client is not yet fully implemented.")
         return instance
       except Exception as e:
         logger.exception(

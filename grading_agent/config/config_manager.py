@@ -193,9 +193,45 @@ class ConfigManager:
              return default
 
 
+    def get_llm_provider(self) -> Optional[str]:
+        """Returns the configured LLM provider name."""
+        return self.get('llm.provider')
+    def get_llm_model(self) -> Optional[str]:
+        """Returns the configured LLM model name."""
+        return self.get('llm.model')
+
     def get_llm_config(self) -> Dict[str, Any]:
-        """Returns the 'llm' section of the configuration."""
-        return self.get('llm', {})
+        """Returns the configuration dictionary for the currently selected LLM provider.
+
+        Retrieves the provider name (e.g., 'openai', 'gemini') from the 'llm.provider'
+        setting and returns the corresponding sub-dictionary under the 'llm' section.
+        Returns an empty dictionary if the provider is not specified or its
+        configuration is not found.
+
+        Returns:
+            A dictionary containing the settings specific to the configured LLM provider.
+        """
+        logger.debug("Entering get_llm_config method.") # Added logging
+        provider = self.get_llm_provider()
+        logger.debug("LLM provider from config: %s", provider) # Added logging
+        if not provider:
+            logger.warning("LLM provider is not specified in the configuration ('llm.provider'). Returning empty config.")
+            return {}
+
+        llm_section = self.get('llm', {})
+        logger.debug("Full 'llm' settings block: %s", llm_section) # Added logging
+        provider_config = llm_section.get(provider, {})
+        logger.debug("Provider-specific config found for '%s': %s", provider, provider_config) # Added logging
+
+        if not isinstance(provider_config, dict):
+             logger.warning(
+                 "Configuration for provider '%s' under 'llm' is not a dictionary. Found: %s. Returning empty config.",
+                 provider, type(provider_config)
+             )
+             return {}
+
+        logger.debug("Returning LLM config for provider '%s': %s", provider, provider_config) # Updated logging message for clarity
+        return provider_config
 
     def get_path_config(self) -> Dict[str, Any]:
         """Returns the 'paths' section of the configuration."""

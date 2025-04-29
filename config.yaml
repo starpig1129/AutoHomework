@@ -2,12 +2,25 @@
 
 # LLM Settings
 llm:
-  provider: "anthropic"  # Supported: "openai", "anthropic", "gemini" (gemini is placeholder)
-  model: "claude-3-7-sonnet-latest" # Specific model name (e.g., "gpt-4o-mini", "claude-3-5-sonnet-latest")
+  provider: "gemini"  # Supported: "openai", "anthropic", "gemini" (gemini is placeholder)
+  model: "gemini-2.0-flash" # Specific model name (e.g., "gpt-4o-mini", "claude-3-5-sonnet-latest")
   parameters: # Optional parameters passed to the LLM client constructor
-    max_tokens: 300
+    max_tokens: 1024
     temperature: 1.0
     # Add other provider-specific parameters here if needed
+
+  # Specific settings for each provider (Optional, overrides top-level if provider matches)
+  openai:
+    api_key_env: "OPENAI_API_KEY"
+    # model: "gpt-4o-mini" # Example override
+
+  anthropic:
+    api_key_env: "ANTHROPIC_API_KEY"
+    # model: "claude-3-5-sonnet-latest" # Example override
+
+  gemini:
+    api_key_env: "GEMINI_API_KEY"
+    model: "gemini-pro" # Default Gemini model
 
 # File Processing Settings
 processing:
@@ -17,7 +30,7 @@ processing:
 # Paths Configuration
 paths:
   # Directory containing student submission folders (e.g., "StudentID-StudentName")
-  homework_dir: "./homework" # Use relative path from project root
+  homework_dir: "" # Use relative path from project root
   # Output CSV file for grades
   output_csv: "./Output/grades.csv" # Use relative path
   # System prompt file
@@ -31,6 +44,6 @@ agent:
 
 # Logging Configuration (Basic - can be expanded)
 logging:
-  level: "INFO" # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  level: "DEBUG" # DEBUG, INFO, WARNING, ERROR, CRITICAL
   log_file: "grading_agent.log" # Optional: file to log to
   format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
