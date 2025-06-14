@@ -2,8 +2,8 @@
 
 # LLM Settings
 llm:
-  provider: "gemini"  # Supported: "openai", "anthropic", "gemini" (gemini is placeholder)
-  model: "gemini-2.0-flash" # Specific model name (e.g., "gpt-4o-mini", "claude-3-5-sonnet-latest")
+  provider: "anthropic"  # Supported: "openai", "anthropic", "gemini" (gemini is placeholder)
+  model: "claude-sonnet-4-20250514" # Specific model name (e.g., "gpt-4o-mini", "claude-3-5-sonnet-latest")
   parameters: # Optional parameters passed to the LLM client constructor
     max_tokens: 1024
     temperature: 1.0
